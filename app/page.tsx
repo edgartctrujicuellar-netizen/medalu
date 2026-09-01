@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect } from "react";
 
-// Interfaces del sistema
 interface Producto {
   id: string;
   nombre: string;
   precio: number;
   categoria: string;
   imagen: string;
+  agotado?: boolean;
 }
 
 interface ItemCarrito extends Producto {
@@ -32,6 +32,7 @@ const PRODUCTOS_INICIALES: Producto[] = [
     precio: 350,
     categoria: "Bazar",
     imagen: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&q=80",
+    agotado: false,
   },
   {
     id: "p2",
@@ -39,6 +40,7 @@ const PRODUCTOS_INICIALES: Producto[] = [
     precio: 180,
     categoria: "Alimentos",
     imagen: "https://images.unsplash.com/photo-1597481499750-3e6b22637e12?w=400&q=80",
+    agotado: false,
   },
   {
     id: "p3",
@@ -46,16 +48,16 @@ const PRODUCTOS_INICIALES: Producto[] = [
     precio: 45,
     categoria: "Lácteos y Bebidas",
     imagen: "https://images.unsplash.com/photo-1563636619-e9143da7973b?w=400&q=80",
+    agotado: false,
   },
 ];
 
 const IMG_FALLBACK = "https://images.unsplash.com/photo-1560393464-5c69a73c5770?w=400&q=80";
 
 export default function PaginaMedaluStore() {
-  const [productos, setProductos] = useState<Producto[]>(PRODUCTOS_INICIALES);
-  const [agotados, setAgotados] = useState<string[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
   const [categoriaActiva, setCategoriaActiva] = useState<string>("Todos");
-  const [cargandoServidor, setCargandoServidor] = useState<boolean>(true);
+  const [cargando, setCargando] = useState<boolean>(true);
 
   // Carrito
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
@@ -66,75 +68,61 @@ export default function PaginaMedaluStore() {
   const [modalLogin, setModalLogin] = useState<boolean>(false);
   const [modalAdmin, setModalAdmin] = useState<boolean>(false);
 
-  // Formularios
+  // Formulario Pedido
   const [clienteNombre, setClienteNombre] = useState<string>("");
   const [clienteDireccion, setClienteDireccion] = useState<string>("");
   const [entrega, setEntrega] = useState<"tienda" | "delivery">("tienda");
 
-  // Autenticación Dueña
+  // Admin
   const [loginPass, setLoginPass] = useState<string>("");
   const [passGuardada, setPassGuardada] = useState<string>("Medalu2026");
 
-  // Agregar Producto
+  // Formulario Agregar Producto
   const [pNombre, setPNombre] = useState<string>("");
   const [pPrecio, setPPrecio] = useState<string>("");
   const [pCategoria, setPCategoria] = useState<string>("Bazar");
   const [pImagen, setPImagen] = useState<string>("");
   const [previewFoto, setPreviewFoto] = useState<string>("");
 
+  // Cargar del almacenamiento permanente (LocalStorage) al iniciar
   useEffect(() => {
-    async function sincronizarDesdeServidor() {
+    const datosGuardados = localStorage.getItem("medalu_productos_global");
+    if (datosGuardados) {
       try {
-        const resp = await fetch("/api/productos");
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.productos && data.productos.length > 0) setProductos(data.productos);
-          if (data.agotados) setAgotados(data.agotados);
-        }
-      } catch (err) {
-        const pLocales = localStorage.getItem("medalu_productos_global");
-        if (pLocales) setProductos(JSON.parse(pLocales));
-        const aLocales = localStorage.getItem("medalu_agotados_global");
-        if (aLocales) setAgotados(JSON.parse(aLocales));
-      } finally {
-        setCargandoServidor(false);
+        setProductos(JSON.parse(datosGuardados));
+      } catch (e) {
+        setProductos(PRODUCTOS_INICIALES);
       }
+    } else {
+      setProductos(PRODUCTOS_INICIALES);
+      localStorage.setItem("medalu_productos_global", JSON.stringify(PRODUCTOS_INICIALES));
     }
+    setCargando(false);
 
-    sincronizarDesdeServidor();
     const passLocal = localStorage.getItem("medalu_pass");
     if (passLocal) setPassGuardada(passLocal);
   }, []);
 
-  const guardarEnServidorGlobal = async (nuevosProds: Producto[], nuevosAgotados: string[]) => {
-    localStorage.setItem("medalu_productos_global", JSON.stringify(nuevosProds));
-    localStorage.setItem("medalu_agotados_global", JSON.stringify(nuevosAgotados));
-
-    try {
-      await fetch("/api/productos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productos: nuevosProds, agotados: nuevosAgotados }),
-      });
-    } catch (e) {
-      console.log("Persistencia local activada.");
-    }
+  // Función para guardar cambios globalmente en la memoria local
+  const guardarProductosGlobalmente = (nuevosProductos: Producto[]) => {
+    setProductos(nuevosProductos);
+    localStorage.setItem("medalu_productos_global", JSON.stringify(nuevosProductos));
   };
 
   const uy = (monto: number) => `$UY ${monto.toLocaleString("es-UY")}`;
-  const estaAgotado = (id: string) => agotados.includes(id);
 
+  // Marcar o desmarcar agotado
   const toggleStock = (id: string) => {
-    const nuevosAgotados = estaAgotado(id)
-      ? agotados.filter((aId) => aId !== id)
-      : [...agotados, id];
-    setAgotados(nuevosAgotados);
-    guardarEnServidorGlobal(productos, nuevosAgotados);
+    const productosActualizados = productos.map((p) =>
+      p.id === id ? { ...p, agotado: !p.agotado } : p
+    );
+    guardarProductosGlobalmente(productosActualizados);
   };
 
+  // Carrito
   const agregarAlCarrito = (id: string) => {
     const prod = productos.find((p) => p.id === id);
-    if (!prod) return;
+    if (!prod || prod.agotado) return;
 
     setCarrito((prev) => {
       const existe = prev.find((item) => item.id === id);
@@ -162,10 +150,6 @@ export default function PaginaMedaluStore() {
     );
   };
 
-  const quitarDelCarrito = (id: string) => {
-    setCarrito((prev) => prev.filter((item) => item.id !== id));
-  };
-
   const totalCarrito = () =>
     carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
 
@@ -188,8 +172,7 @@ export default function PaginaMedaluStore() {
 
     msg += `\n*TOTAL: ${uy(totalCarrito())}*`;
 
-    const url = `https://wa.me/59892828243?text=${encodeURIComponent(msg)}`;
-    window.open(url, "_blank");
+    window.open(`https://wa.me/59892828243?text=${encodeURIComponent(msg)}`, "_blank");
   };
 
   const verificarLogin = (e: React.FormEvent) => {
@@ -212,35 +195,36 @@ export default function PaginaMedaluStore() {
     }
   };
 
-  const guardarProducto = async (e: React.FormEvent) => {
+  // Guardar un producto nuevo
+  const guardarProducto = (e: React.FormEvent) => {
     e.preventDefault();
     const imagenFinal = previewFoto || pImagen || IMG_FALLBACK;
 
     const nuevoProd: Producto = {
-      id: "p_" + Date.now(),
+      id: "prod_" + Date.now(),
       nombre: pNombre,
       precio: parseFloat(pPrecio) || 0,
       categoria: pCategoria,
       imagen: imagenFinal,
+      agotado: false,
     };
 
     const listaActualizada = [nuevoProd, ...productos];
-    setProductos(listaActualizada);
-    await guardarEnServidorGlobal(listaActualizada, agotados);
+    guardarProductosGlobalmente(listaActualizada);
 
     setPNombre("");
     setPPrecio("");
     setPCategoria("Bazar");
     setPImagen("");
     setPreviewFoto("");
-    alert("¡Producto publicado globalmente con éxito!");
+    alert("¡Producto guardado correctamente!");
   };
 
-  const eliminarProductoAdmin = async (id: string) => {
-    if (confirm("¿Deseas eliminar este producto del catálogo general?")) {
+  // Eliminar producto
+  const eliminarProductoAdmin = (id: string) => {
+    if (confirm("¿Segura que deseas eliminar este producto?")) {
       const listaActualizada = productos.filter((p) => p.id !== id);
-      setProductos(listaActualizada);
-      await guardarEnServidorGlobal(listaActualizada, agotados);
+      guardarProductosGlobalmente(listaActualizada);
     }
   };
 
@@ -251,7 +235,7 @@ export default function PaginaMedaluStore() {
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#4A3E3D]">
-      {/* ENCABEZADO MEDALU */}
+      {/* ENCABEZADO */}
       <header className="bg-[#F3EFEA] border-b border-[#E7E0D6] sticky top-0 z-50">
         <div className="max-w-[1200px] mx-auto px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
           <div>
@@ -274,7 +258,7 @@ export default function PaginaMedaluStore() {
         </div>
       </header>
 
-      {/* PORTADA PRINCIPAL */}
+      {/* PORTADA */}
       <section className="max-w-[1200px] mx-auto pt-10 pb-2 px-5 text-center">
         <h2 className="text-xl sm:text-3xl font-bold mb-2">Tus productos al mejor precio</h2>
         <p className="text-[#A8876A] max-w-[560px] mx-auto">
@@ -282,7 +266,7 @@ export default function PaginaMedaluStore() {
         </p>
       </section>
 
-      {/* NAVEGACIÓN Y FILTROS */}
+      {/* NAVEGACIÓN Y CATEGORÍAS (INCLUYE BAZAR) */}
       <nav className="max-w-[1200px] mx-auto py-6 px-5 flex gap-2.5 flex-wrap justify-center">
         {CATEGORIAS.map((cat) => (
           <button
@@ -299,95 +283,71 @@ export default function PaginaMedaluStore() {
         ))}
       </nav>
 
-      {/* CATÁLOGOS */}
+      {/* CATÁLOGO */}
       <main className="max-w-[1200px] mx-auto px-5 py-5">
-        {cargandoServidor ? (
-          <p className="text-center py-16 text-[#A8876A]">Cargando tienda MEDALU...</p>
+        {cargando ? (
+          <p className="text-center py-16 text-[#A8876A]">Cargando catálogo...</p>
         ) : productosFiltrados.length === 0 ? (
           <p className="col-span-full text-center py-16 text-[#A8876A]">
-            No hay productos en la categoría {categoriaActiva} por el momento.
+            No hay productos en la categoría {categoriaActiva}.
           </p>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-5">
-            {productosFiltrados.map((p) => {
-              const agotado = estaAgotado(p.id);
-              const imagen = p.imagen && p.imagen.trim() !== "" ? p.imagen : IMG_FALLBACK;
+            {productosFiltrados.map((p) => (
+              <article
+                key={p.id}
+                className={`bg-white rounded-2xl p-4 shadow-sm border border-[#E7E0D6] flex flex-col relative transition hover:shadow-md ${
+                  p.agotado ? "opacity-60" : ""
+                }`}
+              >
+                {p.agotado && (
+                  <span className="absolute top-6 right-6 bg-red-800 text-white text-xs px-2.5 py-1 rounded-full font-bold z-10">
+                    Agotado
+                  </span>
+                )}
+                <div className="w-full h-[200px] rounded-xl overflow-hidden bg-[#F3EFEA] mb-3">
+                  <img
+                    src={p.imagen || IMG_FALLBACK}
+                    alt={p.nombre}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = IMG_FALLBACK;
+                    }}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5 flex-1">
+                  <span className="text-[0.7rem] tracking-[0.15em] uppercase text-[#A8876A] font-bold">
+                    {p.categoria}
+                  </span>
+                  <span className="font-semibold text-[#4A3E3D]">{p.nombre}</span>
+                  <span className="text-lg font-bold text-[#2C2623] mt-auto">
+                    {uy(p.precio)}
+                  </span>
 
-              return (
-                <article
-                  key={p.id}
-                  className={`bg-white rounded-2xl p-4 shadow-sm border border-[#E7E0D6] flex flex-col relative transition hover:shadow-md ${
-                    agotado ? "opacity-60" : ""
-                  }`}
-                >
-                  {agotado && (
-                    <span className="absolute top-6 right-6 bg-red-800 text-white text-xs px-2.5 py-1 rounded-full font-bold z-10">
+                  {p.agotado ? (
+                    <button
+                      className="mt-2 w-full py-2 bg-gray-200 text-gray-500 rounded-lg text-sm font-semibold cursor-not-allowed"
+                      disabled
+                    >
                       Agotado
-                    </span>
+                    </button>
+                  ) : (
+                    <button
+                      className="mt-2 w-full py-2 bg-[#4A3E3D] hover:bg-[#2C2623] text-white rounded-lg text-sm font-semibold transition cursor-pointer"
+                      onClick={() => agregarAlCarrito(p.id)}
+                    >
+                      Agregar al carrito
+                    </button>
                   )}
-                  <div className="w-full h-[200px] rounded-xl overflow-hidden bg-[#F3EFEA] mb-3">
-                    <img
-                      src={imagen}
-                      alt={p.nombre}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = IMG_FALLBACK;
-                      }}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5 flex-1">
-                    <span className="text-[0.7rem] tracking-[0.15em] uppercase text-[#A8876A] font-bold">
-                      {p.categoria}
-                    </span>
-                    <span className="font-semibold text-[#4A3E3D]">{p.nombre}</span>
-                    <span className="text-lg font-bold text-[#2C2623] mt-auto">
-                      {uy(p.precio)}
-                    </span>
-
-                    {agotado ? (
-                      <button
-                        className="mt-2 w-full py-2 bg-gray-200 text-gray-500 rounded-lg text-sm font-semibold cursor-not-allowed"
-                        disabled
-                      >
-                        Agotado
-                      </button>
-                    ) : (
-                      <button
-                        className="mt-2 w-full py-2 bg-[#4A3E3D] hover:bg-[#2C2623] text-white rounded-lg text-sm font-semibold transition cursor-pointer"
-                        onClick={() => agregarAlCarrito(p.id)}
-                      >
-                        Agregar al carrito
-                      </button>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
+                </div>
+              </article>
+            ))}
           </div>
         )}
       </main>
 
       {/* FOOTER */}
       <footer className="text-center py-10 px-5 text-[#A8876A] text-sm">
-        <div className="max-w-[640px] mx-auto mb-6 p-6 bg-white rounded-2xl shadow-sm border border-[#E7E0D6]">
-          <h4 className="text-lg text-[#4A3E3D] font-bold mb-3 tracking-wide">
-            Contacto y ubicación
-          </h4>
-          <ul className="list-none space-y-2 text-[#4A3E3D] text-sm">
-            <li>Ramón Trigo, Cerro Largo, Uruguay</li>
-            <li>
-              WhatsApp:{" "}
-              <a
-                href="https://wa.me/59892828243"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline font-semibold"
-              >
-                92 828 243
-              </a>
-            </li>
-          </ul>
-        </div>
         <p>© {new Date().getFullYear()} Medalu · Tu tienda local.</p>
         <p className="mt-2">
           <button
@@ -402,7 +362,7 @@ export default function PaginaMedaluStore() {
       {/* DRAWER CARRITO */}
       {drawerAbierto && (
         <div
-          className="fixed inset-0 bg-black/40 z-50 transition-opacity"
+          className="fixed inset-0 bg-black/40 z-50"
           onClick={() => setDrawerAbierto(false)}
         />
       )}
@@ -412,12 +372,11 @@ export default function PaginaMedaluStore() {
         }`}
       >
         <div className="p-5 border-b border-[#E7E0D6] flex items-center justify-between">
-          <h3 className="text-xl font-bold tracking-wider">Tu Carrito</h3>
+          <h3 className="text-xl font-bold">Tu Carrito</h3>
           <button className="text-2xl cursor-pointer" onClick={() => setDrawerAbierto(false)}>
             &times;
           </button>
         </div>
-
         <div className="flex-1 overflow-y-auto p-4">
           {carrito.length === 0 ? (
             <p className="text-center py-16 text-[#A8876A]">Tu carrito está vacío.</p>
@@ -456,7 +415,6 @@ export default function PaginaMedaluStore() {
             ))
           )}
         </div>
-
         <div className="p-5 border-t border-[#E7E0D6]">
           <div className="flex justify-between items-center text-xl font-bold mb-3.5">
             <span>Total</span>
@@ -575,12 +533,12 @@ export default function PaginaMedaluStore() {
         </div>
       )}
 
-      {/* PANEL ADMIN GLOBAL DE LA DUEÑA */}
+      {/* PANEL ADMIN */}
       {modalAdmin && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-[500px] max-h-[90vh] overflow-y-auto p-5 shadow-xl">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">Panel de Carga Global</h3>
+              <h3 className="text-lg font-bold">Panel de Administración</h3>
               <button className="text-2xl cursor-pointer" onClick={() => setModalAdmin(false)}>
                 &times;
               </button>
@@ -639,7 +597,7 @@ export default function PaginaMedaluStore() {
                 type="submit"
                 className="w-full py-3 bg-[#4A3E3D] hover:bg-[#2C2623] text-white font-semibold rounded-xl"
               >
-                Publicar para todos los clientes
+                Guardar Producto
               </button>
             </form>
 
@@ -656,7 +614,7 @@ export default function PaginaMedaluStore() {
                   <label className="flex items-center gap-1 text-xs cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={estaAgotado(prod.id)}
+                      checked={!!prod.agotado}
                       onChange={() => toggleStock(prod.id)}
                     />
                     Agotado
