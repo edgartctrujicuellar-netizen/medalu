@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 
-// Tipos de datos
+// Interfaces del sistema
 interface Producto {
   id: string;
   nombre: string;
@@ -17,8 +17,8 @@ interface ItemCarrito extends Producto {
 
 const CATEGORIAS = [
   "Todos",
-  "Ropa de Dama",
   "Bazar",
+  "Ropa de Dama",
   "Alimentos",
   "Lácteos y Bebidas",
   "Limpieza",
@@ -28,92 +28,100 @@ const CATEGORIAS = [
 const PRODUCTOS_INICIALES: Producto[] = [
   {
     id: "p1",
+    nombre: "Juego de Tazas de Cerámica",
+    precio: 350,
+    categoria: "Bazar",
+    imagen: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&q=80",
+  },
+  {
+    id: "p2",
     nombre: "Yerba Mate 1kg",
     precio: 180,
     categoria: "Alimentos",
     imagen: "https://images.unsplash.com/photo-1597481499750-3e6b22637e12?w=400&q=80",
   },
   {
-    id: "p2",
+    id: "p3",
     nombre: "Leche Entera 1L",
     precio: 45,
     categoria: "Lácteos y Bebidas",
     imagen: "https://images.unsplash.com/photo-1563636619-e9143da7973b?w=400&q=80",
-  },
-  {
-    id: "p3",
-    nombre: "Juego de Tazas de Cerámica",
-    precio: 350,
-    categoria: "Bazar",
-    imagen: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&q=80",
   },
 ];
 
 const IMG_FALLBACK = "https://images.unsplash.com/photo-1560393464-5c69a73c5770?w=400&q=80";
 
 export default function PaginaMedaluStore() {
-  // Estados de catálogo y productos
   const [productos, setProductos] = useState<Producto[]>(PRODUCTOS_INICIALES);
   const [agotados, setAgotados] = useState<string[]>([]);
   const [categoriaActiva, setCategoriaActiva] = useState<string>("Todos");
+  const [cargandoServidor, setCargandoServidor] = useState<boolean>(true);
 
-  // Estados del Carrito
+  // Carrito
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
   const [drawerAbierto, setDrawerAbierto] = useState<boolean>(false);
 
-  // Estados de Modales y Autenticación
+  // Modales
   const [modalCheckout, setModalCheckout] = useState<boolean>(false);
   const [modalLogin, setModalLogin] = useState<boolean>(false);
   const [modalAdmin, setModalAdmin] = useState<boolean>(false);
 
-  // Formulario Checkout
+  // Formularios
   const [clienteNombre, setClienteNombre] = useState<string>("");
   const [clienteDireccion, setClienteDireccion] = useState<string>("");
   const [entrega, setEntrega] = useState<"tienda" | "delivery">("tienda");
 
-  // Formulario Admin
+  // Autenticación Dueña
   const [loginPass, setLoginPass] = useState<string>("");
   const [passGuardada, setPassGuardada] = useState<string>("Medalu2026");
-  const [capsLogin, setCapsLogin] = useState<boolean>(false);
-  const [vistaRecuperar, setVistaRecuperar] = useState<boolean>(false);
-  const [recSeguridad, setRecSeguridad] = useState<string>("");
-  const [recMaestra, setRecMaestra] = useState<string>("");
-  const [recNueva, setRecNueva] = useState<string>("");
-  const [capsRec, setCapsRec] = useState<boolean>(false);
 
-  // Formulario Agregar Producto
+  // Agregar Producto
   const [pNombre, setPNombre] = useState<string>("");
   const [pPrecio, setPPrecio] = useState<string>("");
   const [pCategoria, setPCategoria] = useState<string>("Bazar");
   const [pImagen, setPImagen] = useState<string>("");
   const [previewFoto, setPreviewFoto] = useState<string>("");
 
-  // Carga inicial y persistencia local + global
   useEffect(() => {
-    const pGuardados = localStorage.getItem("medalu_productos_v2");
-    if (pGuardados) {
+    async function sincronizarDesdeServidor() {
       try {
-        setProductos(JSON.parse(pGuardados));
-      } catch (e) {
-        console.error("Error al cargar productos guardados", e);
+        const resp = await fetch("/api/productos");
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.productos && data.productos.length > 0) setProductos(data.productos);
+          if (data.agotados) setAgotados(data.agotados);
+        }
+      } catch (err) {
+        const pLocales = localStorage.getItem("medalu_productos_global");
+        if (pLocales) setProductos(JSON.parse(pLocales));
+        const aLocales = localStorage.getItem("medalu_agotados_global");
+        if (aLocales) setAgotados(JSON.parse(aLocales));
+      } finally {
+        setCargandoServidor(false);
       }
     }
-    const aGuardados = localStorage.getItem("medalu_agotados");
-    if (aGuardados) {
-      try {
-        setAgotados(JSON.parse(aGuardados));
-      } catch (e) {
-        console.error("Error al cargar productos agotados", e);
-      }
-    }
+
+    sincronizarDesdeServidor();
     const passLocal = localStorage.getItem("medalu_pass");
     if (passLocal) setPassGuardada(passLocal);
   }, []);
 
-  // Formateador de moneda Uruguaya
-  const uy = (monto: number) => `$UY ${monto.toLocaleString("es-UY")}`;
+  const guardarEnServidorGlobal = async (nuevosProds: Producto[], nuevosAgotados: string[]) => {
+    localStorage.setItem("medalu_productos_global", JSON.stringify(nuevosProds));
+    localStorage.setItem("medalu_agotados_global", JSON.stringify(nuevosAgotados));
 
-  // Lógica de Stock
+    try {
+      await fetch("/api/productos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productos: nuevosProds, agotados: nuevosAgotados }),
+      });
+    } catch (e) {
+      console.log("Persistencia local activada.");
+    }
+  };
+
+  const uy = (monto: number) => `$UY ${monto.toLocaleString("es-UY")}`;
   const estaAgotado = (id: string) => agotados.includes(id);
 
   const toggleStock = (id: string) => {
@@ -121,10 +129,9 @@ export default function PaginaMedaluStore() {
       ? agotados.filter((aId) => aId !== id)
       : [...agotados, id];
     setAgotados(nuevosAgotados);
-    localStorage.setItem("medalu_agotados", JSON.stringify(nuevosAgotados));
+    guardarEnServidorGlobal(productos, nuevosAgotados);
   };
 
-  // Carrito Lógica
   const agregarAlCarrito = (id: string) => {
     const prod = productos.find((p) => p.id === id);
     if (!prod) return;
@@ -165,7 +172,6 @@ export default function PaginaMedaluStore() {
   const totalItemsCount = () =>
     carrito.reduce((acc, item) => acc + item.cantidad, 0);
 
-  // Enviar pedido por WhatsApp
   const enviarWhatsApp = (e: React.FormEvent) => {
     e.preventDefault();
     if (carrito.length === 0) return;
@@ -173,9 +179,7 @@ export default function PaginaMedaluStore() {
     let msg = `*Nuevo pedido en MEDALU STORE*\n\n`;
     msg += `*Cliente:* ${clienteNombre}\n`;
     msg += `*Método:* ${entrega === "tienda" ? "Retiro en Local (Ramón Trigo)" : "Envío a domicilio"}\n`;
-    if (entrega === "delivery") {
-      msg += `*Dirección:* ${clienteDireccion}\n`;
-    }
+    if (entrega === "delivery") msg += `*Dirección:* ${clienteDireccion}\n`;
     msg += `\n*Detalle del pedido:*\n`;
 
     carrito.forEach((i) => {
@@ -186,15 +190,6 @@ export default function PaginaMedaluStore() {
 
     const url = `https://wa.me/59892828243?text=${encodeURIComponent(msg)}`;
     window.open(url, "_blank");
-  };
-
-  // Login y Recuperación
-  const chequearCaps = (e: React.KeyboardEvent, setter: (val: boolean) => void) => {
-    if (e.getModifierState("CapsLock")) {
-      setter(true);
-    } else {
-      setter(false);
-    }
   };
 
   const verificarLogin = (e: React.FormEvent) => {
@@ -208,38 +203,16 @@ export default function PaginaMedaluStore() {
     }
   };
 
-  const recuperarPass = (e: React.FormEvent) => {
-    e.preventDefault();
-    const respSegOk = recSeguridad.trim().toLowerCase() === "medalu";
-    const claveMaestraOk = recMaestra.trim() === "MEDALU1234";
-
-    if (respSegOk || claveMaestraOk) {
-      setPassGuardada(recNueva);
-      localStorage.setItem("medalu_pass", recNueva);
-      alert("¡Contraseña restablecida con éxito! Ya puedes ingresar.");
-      setVistaRecuperar(false);
-      setRecSeguridad("");
-      setRecMaestra("");
-      setRecNueva("");
-    } else {
-      alert("La respuesta de seguridad o la clave maestra son incorrectas.");
-    }
-  };
-
-  // Previsualización de Imagen
   const previsualizarFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewFoto(reader.result as string);
-      };
+      reader.onloadend = () => setPreviewFoto(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
 
-  // Guardar Producto en Panel Admin
-  const guardarProducto = (e: React.FormEvent) => {
+  const guardarProducto = async (e: React.FormEvent) => {
     e.preventDefault();
     const imagenFinal = previewFoto || pImagen || IMG_FALLBACK;
 
@@ -253,26 +226,24 @@ export default function PaginaMedaluStore() {
 
     const listaActualizada = [nuevoProd, ...productos];
     setProductos(listaActualizada);
-    localStorage.setItem("medalu_productos_v2", JSON.stringify(listaActualizada));
+    await guardarEnServidorGlobal(listaActualizada, agotados);
 
-    // Limpiar formulario
     setPNombre("");
     setPPrecio("");
     setPCategoria("Bazar");
     setPImagen("");
     setPreviewFoto("");
-    alert("¡Producto agregado con éxito!");
+    alert("¡Producto publicado globalmente con éxito!");
   };
 
-  const eliminarProductoAdmin = (id: string) => {
-    if (confirm("¿Estás segura de eliminar este producto del catálogo?")) {
+  const eliminarProductoAdmin = async (id: string) => {
+    if (confirm("¿Deseas eliminar este producto del catálogo general?")) {
       const listaActualizada = productos.filter((p) => p.id !== id);
       setProductos(listaActualizada);
-      localStorage.setItem("medalu_productos_v2", JSON.stringify(listaActualizada));
+      await guardarEnServidorGlobal(listaActualizada, agotados);
     }
   };
 
-  // Filtro de productos
   const productosFiltrados =
     categoriaActiva === "Todos"
       ? productos
@@ -280,51 +251,38 @@ export default function PaginaMedaluStore() {
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#4A3E3D]">
-      {/* ENCABEZADO Y LOGO */}
+      {/* ENCABEZADO MEDALU */}
       <header className="bg-[#F3EFEA] border-b border-[#E7E0D6] sticky top-0 z-50">
         <div className="max-w-[1200px] mx-auto px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            {/* Si tienes la imagen del logo cargada en public/logo.png se mostrará aquí */}
-            <img
-              src="/logo.png"
-              alt="Medalu Logo"
-              className="h-12 w-auto object-contain hidden sm:block"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-[0.35em] text-[#4A3E3D] leading-none">
-                MEDALU
-              </h1>
-              <p className="text-xs tracking-[0.3em] uppercase text-[#A8876A] mt-1">
-                Tu tienda local
-              </p>
-            </div>
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-[0.35em] text-[#4A3E3D] leading-none">
+              MEDALU
+            </h1>
+            <p className="text-xs tracking-[0.3em] uppercase text-[#A8876A] mt-1">
+              Tu tienda local
+            </p>
           </div>
-          <div className="flex items-center gap-2.5 mx-auto sm:mx-0">
-            <button
-              className="bg-[#4A3E3D] hover:bg-[#2C2623] text-white px-5 py-2.5 rounded-full font-semibold transition relative cursor-pointer"
-              onClick={() => setDrawerAbierto(true)}
-            >
-              Carrito
-              <span className="absolute -top-1.5 -right-1.5 bg-[#A8876A] text-white text-[0.72rem] font-bold min-w-[20px] h-5 rounded-full flex items-center justify-center px-1">
-                {totalItemsCount()}
-              </span>
-            </button>
-          </div>
+          <button
+            className="bg-[#4A3E3D] hover:bg-[#2C2623] text-white px-5 py-2.5 rounded-full font-semibold transition relative cursor-pointer"
+            onClick={() => setDrawerAbierto(true)}
+          >
+            Carrito
+            <span className="absolute -top-1.5 -right-1.5 bg-[#A8876A] text-white text-[0.72rem] font-bold min-w-[20px] h-5 rounded-full flex items-center justify-center px-1">
+              {totalItemsCount()}
+            </span>
+          </button>
         </div>
       </header>
 
-      {/* HERO BANNER */}
+      {/* PORTADA PRINCIPAL */}
       <section className="max-w-[1200px] mx-auto pt-10 pb-2 px-5 text-center">
         <h2 className="text-xl sm:text-3xl font-bold mb-2">Tus productos al mejor precio</h2>
         <p className="text-[#A8876A] max-w-[560px] mx-auto">
-          Ropa de dama, artículos de bazar, alimentos y productos para el hogar.
+          Artículos de Bazar, Ropa de dama, alimentos y todo para el hogar.
         </p>
       </section>
 
-      {/* FILTROS DE CATEGORÍA (INCLUYE BAZAR) */}
+      {/* NAVEGACIÓN Y FILTROS */}
       <nav className="max-w-[1200px] mx-auto py-6 px-5 flex gap-2.5 flex-wrap justify-center">
         {CATEGORIAS.map((cat) => (
           <button
@@ -341,11 +299,13 @@ export default function PaginaMedaluStore() {
         ))}
       </nav>
 
-      {/* CATÁLOGO DE PRODUCTOS */}
+      {/* CATÁLOGOS */}
       <main className="max-w-[1200px] mx-auto px-5 py-5">
-        {productosFiltrados.length === 0 ? (
+        {cargandoServidor ? (
+          <p className="text-center py-16 text-[#A8876A]">Cargando tienda MEDALU...</p>
+        ) : productosFiltrados.length === 0 ? (
           <p className="col-span-full text-center py-16 text-[#A8876A]">
-            No hay productos en esta categoría todavía.
+            No hay productos en la categoría {categoriaActiva} por el momento.
           </p>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-5">
@@ -407,7 +367,7 @@ export default function PaginaMedaluStore() {
         )}
       </main>
 
-      {/* PIE DE PÁGINA Y CONTACTO */}
+      {/* FOOTER */}
       <footer className="text-center py-10 px-5 text-[#A8876A] text-sm">
         <div className="max-w-[640px] mx-auto mb-6 p-6 bg-white rounded-2xl shadow-sm border border-[#E7E0D6]">
           <h4 className="text-lg text-[#4A3E3D] font-bold mb-3 tracking-wide">
@@ -426,34 +386,20 @@ export default function PaginaMedaluStore() {
                 92 828 243
               </a>
             </li>
-            <li>
-              <a href="mailto:blancarodales16@gmail.com" className="hover:underline">
-                blancarodales16@gmail.com
-              </a>
-            </li>
           </ul>
-          <a
-            className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-[#2C2623] text-white rounded-full font-semibold text-sm hover:opacity-90"
-            href="https://www.google.com/maps?q=-32.349611,-54.637167"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Cómo llegar (Ver en Google Maps)
-          </a>
         </div>
         <p>© {new Date().getFullYear()} Medalu · Tu tienda local.</p>
         <p className="mt-2">
-          ¿Eres la dueña?{" "}
           <button
             className="underline cursor-pointer bg-none border-none text-[#A8876A] font-semibold"
             onClick={() => setModalLogin(true)}
           >
-            Ingresa al Panel de Administración
+            Panel Admin Dueña
           </button>
         </p>
       </footer>
 
-      {/* DRAWER DEL CARRITO */}
+      {/* DRAWER CARRITO */}
       {drawerAbierto && (
         <div
           className="fixed inset-0 bg-black/40 z-50 transition-opacity"
@@ -491,25 +437,19 @@ export default function PaginaMedaluStore() {
                   <div className="text-xs text-[#A8876A]">{uy(i.precio)} c/u</div>
                   <div className="flex items-center gap-2 mt-1.5">
                     <button
-                      className="w-6 h-6 rounded border border-[#4A3E3D] font-bold leading-none cursor-pointer"
+                      className="w-6 h-6 rounded border border-[#4A3E3D] font-bold cursor-pointer"
                       onClick={() => cambiarCantidad(i.id, -1)}
                     >
                       −
                     </button>
                     <span className="min-w-[22px] text-center font-semibold">{i.cantidad}</span>
                     <button
-                      className="w-6 h-6 rounded border border-[#4A3E3D] font-bold leading-none cursor-pointer"
+                      className="w-6 h-6 rounded border border-[#4A3E3D] font-bold cursor-pointer"
                       onClick={() => cambiarCantidad(i.id, 1)}
                     >
                       +
                     </button>
                   </div>
-                  <button
-                    className="text-xs text-red-600 underline mt-1 block cursor-pointer"
-                    onClick={() => quitarDelCarrito(i.id)}
-                  >
-                    Quitar
-                  </button>
                 </div>
                 <strong>{uy(i.precio * i.cantidad)}</strong>
               </div>
@@ -525,10 +465,7 @@ export default function PaginaMedaluStore() {
           <button
             className="w-full py-3 bg-[#25D366] hover:bg-[#1ebd5a] text-white font-bold rounded-xl transition cursor-pointer text-center"
             onClick={() => {
-              if (carrito.length === 0) {
-                alert("Tu carrito está vacío.");
-                return;
-              }
+              if (carrito.length === 0) return alert("Tu carrito está vacío.");
               setModalCheckout(true);
             }}
           >
@@ -564,7 +501,7 @@ export default function PaginaMedaluStore() {
                 <div className="mb-4">
                   <label className="block font-semibold mb-1.5 text-sm">Método de entrega</label>
                   <div className="flex flex-col gap-2">
-                    <label className="flex items-center gap-2.5 p-3 border border-[#E7E0D6] rounded-lg cursor-pointer bg-white">
+                    <label className="flex items-center gap-2.5 p-3 border border-[#E7E0D6] rounded-lg cursor-pointer">
                       <input
                         type="radio"
                         name="entrega"
@@ -572,11 +509,9 @@ export default function PaginaMedaluStore() {
                         checked={entrega === "tienda"}
                         onChange={() => setEntrega("tienda")}
                       />
-                      <span>
-                        Retiro en local <strong>(Gratis · Ramón Trigo)</strong>
-                      </span>
+                      <span>Retiro en local (Ramón Trigo)</span>
                     </label>
-                    <label className="flex items-center gap-2.5 p-3 border border-[#E7E0D6] rounded-lg cursor-pointer bg-white">
+                    <label className="flex items-center gap-2.5 p-3 border border-[#E7E0D6] rounded-lg cursor-pointer">
                       <input
                         type="radio"
                         name="entrega"
@@ -584,18 +519,18 @@ export default function PaginaMedaluStore() {
                         checked={entrega === "delivery"}
                         onChange={() => setEntrega("delivery")}
                       />
-                      <span>Envíos</span>
+                      <span>Envío a domicilio</span>
                     </label>
                   </div>
                 </div>
 
                 {entrega === "delivery" && (
                   <div className="mb-4">
-                    <label className="block font-semibold mb-1.5 text-sm">Dirección de entrega</label>
+                    <label className="block font-semibold mb-1.5 text-sm">Dirección</label>
                     <input
                       type="text"
-                      required={entrega === "delivery"}
-                      placeholder="Calle, número, barrio, referencia"
+                      required
+                      placeholder="Calle y esquina"
                       value={clienteDireccion}
                       onChange={(e) => setClienteDireccion(e.target.value)}
                       className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white"
@@ -615,258 +550,125 @@ export default function PaginaMedaluStore() {
         </div>
       )}
 
-      {/* MODAL LOGIN ADMIN */}
+      {/* LOGIN DUEÑA */}
       {modalLogin && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-[420px] overflow-hidden shadow-xl">
-            <div className="p-5 border-b border-[#E7E0D6] flex justify-between items-center">
-              <h3 className="text-lg font-bold">Acceso de la dueña</h3>
-              <button className="text-2xl cursor-pointer" onClick={() => setModalLogin(false)}>
-                &times;
+          <div className="bg-white rounded-2xl w-full max-w-[400px] p-5 shadow-xl">
+            <h3 className="text-lg font-bold mb-3">Acceso Panel Admin</h3>
+            <form onSubmit={verificarLogin}>
+              <input
+                type="password"
+                required
+                placeholder="Contraseña de la dueña"
+                value={loginPass}
+                onChange={(e) => setLoginPass(e.target.value)}
+                className="w-full p-2.5 border border-[#E7E0D6] rounded-lg mb-3"
+              />
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-[#4A3E3D] text-white font-semibold rounded-lg"
+              >
+                Entrar
               </button>
-            </div>
-            <div className="p-5">
-              {!vistaRecuperar ? (
-                <form onSubmit={verificarLogin}>
-                  <p className="bg-[#E7E0D6] p-3 rounded-lg text-xs mb-4">
-                    Ingresa tu contraseña para administrar la tienda.
-                  </p>
-                  <div className="mb-4">
-                    <label className="block font-semibold mb-1.5 text-sm">Contraseña</label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={loginPass}
-                      onChange={(e) => setLoginPass(e.target.value)}
-                      onKeyUp={(e) => chequearCaps(e, setCapsLogin)}
-                      onKeyDown={(e) => chequearCaps(e, setCapsLogin)}
-                      className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white"
-                    />
-                    {capsLogin && (
-                      <p className="text-xs font-semibold text-amber-700 mt-1">
-                        ⚠ Bloq Mayús / Caps Lock está activado
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-[#4A3E3D] hover:bg-[#2C2623] text-white font-semibold rounded-xl transition cursor-pointer"
-                  >
-                    Ingresar
-                  </button>
-                  <p className="mt-3.5 text-center">
-                    <button
-                      type="button"
-                      className="underline text-xs text-[#A8876A] cursor-pointer"
-                      onClick={() => setVistaRecuperar(true)}
-                    >
-                      ¿Olvidaste tu contraseña?
-                    </button>
-                  </p>
-                </form>
-              ) : (
-                <form onSubmit={recuperarPass}>
-                  <p className="bg-[#E7E0D6] p-3 rounded-lg text-xs mb-4">
-                    Responde la pregunta de seguridad <strong>o</strong> ingresa la clave maestra.
-                  </p>
-                  <div className="mb-3">
-                    <label className="block font-semibold mb-1 text-xs">
-                      ¿Cuál es el nombre de tu tienda?
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Respuesta de seguridad"
-                      value={recSeguridad}
-                      onChange={(e) => setRecSeguridad(e.target.value)}
-                      className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
-                    />
-                  </div>
-                  <div className="mb-3">
-                    <label className="block font-semibold mb-1 text-xs">
-                      Clave maestra de recuperación
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Opcional si respondiste arriba"
-                      value={recMaestra}
-                      onChange={(e) => setRecMaestra(e.target.value)}
-                      className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
-                    />
-                  </div>
-                  <div className="mb-4">
-                    <label className="block font-semibold mb-1 text-xs">Nueva contraseña</label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="Escribe tu nueva contraseña"
-                      value={recNueva}
-                      onChange={(e) => setRecNueva(e.target.value)}
-                      onKeyUp={(e) => chequearCaps(e, setCapsRec)}
-                      onKeyDown={(e) => chequearCaps(e, setCapsRec)}
-                      className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
-                    />
-                    {capsRec && (
-                      <p className="text-xs font-semibold text-amber-700 mt-1">
-                        ⚠ Bloq Mayús / Caps Lock está activado
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-[#4A3E3D] hover:bg-[#2C2623] text-white font-semibold rounded-xl transition cursor-pointer"
-                  >
-                    Restablecer contraseña
-                  </button>
-                  <p className="mt-3.5 text-center">
-                    <button
-                      type="button"
-                      className="underline text-xs text-[#A8876A] cursor-pointer"
-                      onClick={() => setVistaRecuperar(false)}
-                    >
-                      Volver al inicio de sesión
-                    </button>
-                  </p>
-                </form>
-              )}
-            </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* MODAL PANEL ADMIN */}
+      {/* PANEL ADMIN GLOBAL DE LA DUEÑA */}
       {modalAdmin && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-[500px] max-h-[90vh] overflow-y-auto shadow-xl">
-            <div className="p-5 border-b border-[#E7E0D6] flex justify-between items-center sticky top-0 bg-white z-10">
-              <h3 className="text-lg font-bold">Panel de Administración Medalu</h3>
+          <div className="bg-white rounded-2xl w-full max-w-[500px] max-h-[90vh] overflow-y-auto p-5 shadow-xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">Panel de Carga Global</h3>
               <button className="text-2xl cursor-pointer" onClick={() => setModalAdmin(false)}>
                 &times;
               </button>
             </div>
-            <div className="p-5">
-              <p className="bg-[#E7E0D6] p-3 rounded-lg text-xs mb-4">
-                Agrega productos, marca los que están <strong>agotados</strong> o elimínalos.
-              </p>
 
-              <form onSubmit={guardarProducto}>
-                <div className="mb-3">
-                  <label className="block font-semibold mb-1 text-xs">Nombre del producto</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: Yerba Mate 1kg"
-                    value={pNombre}
-                    onChange={(e) => setPNombre(e.target.value)}
-                    className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="block font-semibold mb-1 text-xs">Precio ($UY)</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    step="1"
-                    placeholder="Ej: 150"
-                    value={pPrecio}
-                    onChange={(e) => setPPrecio(e.target.value)}
-                    className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="block font-semibold mb-1 text-xs">Categoría</label>
-                  <select
-                    value={pCategoria}
-                    onChange={(e) => setPCategoria(e.target.value)}
-                    className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
-                  >
-                    <option value="Bazar">Bazar</option>
-                    <option value="Ropa de Dama">Ropa de Dama</option>
-                    <option value="Alimentos">Alimentos</option>
-                    <option value="Lácteos y Bebidas">Lácteos y Bebidas</option>
-                    <option value="Limpieza">Limpieza</option>
-                    <option value="Ofertas">Ofertas</option>
-                  </select>
-                </div>
-                <div className="mb-3">
-                  <label className="block font-semibold mb-1 text-xs">
-                    Subir foto desde dispositivo
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={previsualizarFoto}
-                    className="w-full p-2 border border-[#E7E0D6] rounded-lg bg-white text-xs"
-                  />
-                  {previewFoto && (
-                    <img
-                      src={previewFoto}
-                      alt="Preview"
-                      className="mt-2 w-full max-h-[180px] object-cover rounded-lg border"
-                    />
-                  )}
-                </div>
-                <div className="mb-4">
-                  <label className="block font-semibold mb-1 text-xs">O usar URL de imagen</label>
-                  <input
-                    type="url"
-                    placeholder="https://..."
-                    value={pImagen}
-                    onChange={(e) => setPImagen(e.target.value)}
-                    className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full py-3 bg-[#4A3E3D] hover:bg-[#2C2623] text-white font-semibold rounded-xl transition cursor-pointer"
-                >
-                  Guardar Producto
-                </button>
-              </form>
-
-              <hr className="my-5 border-t border-[#E7E0D6]" />
-              <h4 className="font-bold mb-3 text-sm">Gestión del catálogo</h4>
-
-              <div className="space-y-3">
-                {productos.map((prod) => {
-                  const agotado = estaAgotado(prod.id);
-                  return (
-                    <div
-                      key={prod.id}
-                      className="flex gap-3 items-center py-2 border-b border-[#E7E0D6]"
-                    >
-                      <img
-                        src={prod.imagen || IMG_FALLBACK}
-                        alt={prod.nombre}
-                        className="w-12 h-12 rounded-lg object-cover bg-[#E7E0D6]"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = IMG_FALLBACK;
-                        }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-xs truncate">{prod.nombre}</div>
-                        <div className="text-[0.7rem] text-[#A8876A]">{uy(prod.precio)}</div>
-                      </div>
-                      <label className="flex items-center gap-1.5 text-[0.78rem] font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={agotado}
-                          onChange={() => toggleStock(prod.id)}
-                        />
-                        Agotado
-                      </label>
-                      <button
-                        className="text-red-700 font-bold p-1 hover:bg-red-50 rounded cursor-pointer"
-                        onClick={() => eliminarProductoAdmin(prod.id)}
-                        title="Eliminar"
-                      >
-                        🗑
-                      </button>
-                    </div>
-                  );
-                })}
+            <form onSubmit={guardarProducto}>
+              <div className="mb-3">
+                <label className="block text-xs font-semibold mb-1">Nombre</label>
+                <input
+                  type="text"
+                  required
+                  value={pNombre}
+                  onChange={(e) => setPNombre(e.target.value)}
+                  className="w-full p-2 border border-[#E7E0D6] rounded-lg text-sm"
+                />
               </div>
+
+              <div className="mb-3">
+                <label className="block text-xs font-semibold mb-1">Precio ($UY)</label>
+                <input
+                  type="number"
+                  required
+                  value={pPrecio}
+                  onChange={(e) => setPPrecio(e.target.value)}
+                  className="w-full p-2 border border-[#E7E0D6] rounded-lg text-sm"
+                />
+              </div>
+
+              <div className="mb-3">
+                <label className="block text-xs font-semibold mb-1">Categoría</label>
+                <select
+                  value={pCategoria}
+                  onChange={(e) => setPCategoria(e.target.value)}
+                  className="w-full p-2 border border-[#E7E0D6] rounded-lg text-sm"
+                >
+                  <option value="Bazar">Bazar</option>
+                  <option value="Ropa de Dama">Ropa de Dama</option>
+                  <option value="Alimentos">Alimentos</option>
+                  <option value="Lácteos y Bebidas">Lácteos y Bebidas</option>
+                  <option value="Limpieza">Limpieza</option>
+                  <option value="Ofertas">Ofertas</option>
+                </select>
+              </div>
+
+              <div className="mb-3">
+                <label className="block text-xs font-semibold mb-1">Subir Foto desde Celular</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={previsualizarFoto}
+                  className="w-full p-2 border border-[#E7E0D6] rounded-lg text-xs"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#4A3E3D] hover:bg-[#2C2623] text-white font-semibold rounded-xl"
+              >
+                Publicar para todos los clientes
+              </button>
+            </form>
+
+            <hr className="my-5" />
+
+            <h4 className="font-bold mb-3 text-sm">Eliminar o marcar agotado</h4>
+            <div className="space-y-3">
+              {productos.map((prod) => (
+                <div key={prod.id} className="flex gap-3 items-center py-2 border-b">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-xs truncate">{prod.nombre}</div>
+                    <div className="text-[0.7rem] text-[#A8876A]">{uy(prod.precio)}</div>
+                  </div>
+                  <label className="flex items-center gap-1 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={estaAgotado(prod.id)}
+                      onChange={() => toggleStock(prod.id)}
+                    />
+                    Agotado
+                  </label>
+                  <button
+                    className="text-red-700 font-bold p-1 cursor-pointer"
+                    onClick={() => eliminarProductoAdmin(prod.id)}
+                  >
+                    🗑
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>
