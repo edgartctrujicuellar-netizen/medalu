@@ -18,7 +18,7 @@ interface ItemCarrito extends Producto {
 }
 
 const WHATSAPP_NUMERO = "59892828243";
-const CATEGORIAS = ["Todos","Bazar", "Ropa de Dama", "Alimentos", "Lácteos y Bebidas", "Limpieza", "Ofertas"];
+const CATEGORIAS = ["Todos","Bazar", "Ropa de Dama", "Alimentos", "Ropa de niño", "Limpieza", "Ofertas"];
 
 const KEY_CARRITO = "medalu_carrito";
 
