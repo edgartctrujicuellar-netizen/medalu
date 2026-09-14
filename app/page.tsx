@@ -225,16 +225,41 @@ export default function Home() {
     }
   };
 
-  // Foto preview en Admin
+  // Foto preview en Admin: se redimensiona y comprime antes de guardar,
+  // porque una foto tomada con la cámara del celular puede pesar varios MB
+  // y eso rompe el guardado. Con esto siempre queda liviana.
   const previsualizarFoto = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        setPreviewFoto(ev.target?.result as string);
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const MAX_DIM = 1000;
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const comprimida = canvas.toDataURL("image/jpeg", 0.75);
+          setPreviewFoto(comprimida);
+        }
       };
-      reader.readAsDataURL(file);
-    }
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   const guardarProducto = async (e: FormEvent) => {
