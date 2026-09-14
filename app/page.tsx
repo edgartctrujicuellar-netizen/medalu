@@ -11,7 +11,7 @@ interface Producto {
   categoria: string;
   imagen: string;
   agotado: boolean;
-  comentarios?: string;
+  comentarios?: string | null;
 }
 
 interface ItemCarrito extends Producto {
@@ -19,7 +19,7 @@ interface ItemCarrito extends Producto {
 }
 
 const WHATSAPP_NUMERO = "59892828243";
-const CATEGORIAS = ["Todos","Bazar", "Ropa de Dama", "Alimentos", "Ropa de niño", "Limpieza", "Ofertas"];
+const CATEGORIAS = ["Todos", "Bazar", "Ropa de Dama", "Alimentos", "Ropa de niño", "Limpieza", "Ofertas"];
 
 const KEY_CARRITO = "medalu_carrito";
 
@@ -62,6 +62,7 @@ export default function Home() {
   const [pPrecio, setPPrecio] = useState("");
   const [pCategoria, setPCategoria] = useState("Ropa de Dama");
   const [pImagen, setPImagen] = useState("");
+  const [pComentario, setPComentario] = useState("");
   const [previewFoto, setPreviewFoto] = useState("");
   const [guardando, setGuardando] = useState(false);
 
@@ -80,7 +81,7 @@ export default function Home() {
     setCargandoProductos(true);
     const { data, error } = await supabase
       .from("productos")
-      .select("id, nombre, precio, categoria, imagen, agotado")
+      .select("id, nombre, precio, categoria, imagen, agotado, comentarios")
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -253,6 +254,7 @@ export default function Home() {
           precio: Number(pPrecio),
           categoria: pCategoria,
           imagen: imgFinal,
+          comentarios: pComentario.trim() || null,
         }),
       });
       const data = await res.json();
@@ -262,6 +264,7 @@ export default function Home() {
         setPPrecio("");
         setPCategoria("Ropa de Dama");
         setPImagen("");
+        setPComentario("");
         setPreviewFoto("");
       } else {
         alert(data.error || "No se pudo guardar el producto.");
@@ -504,6 +507,9 @@ export default function Home() {
                     <span className="text-lg font-bold text-[#2C2623] mt-auto">
                       {uy(p.precio)}
                     </span>
+                    {p.comentarios && (
+                      <span className="text-xs text-[#A8876A]">{p.comentarios}</span>
+                    )}
 
                     {agotado ? (
                       <button className="btn btn-agotado mt-2" disabled>Agotado</button>
@@ -826,7 +832,7 @@ export default function Home() {
                   <option value="Bazar">Bazar</option>
                   <option value="Ropa de Dama">Ropa de Dama</option>
                   <option value="Alimentos">Alimentos</option>
-                  <option value="Lácteos y Bebidas">Ropa de niño</option>
+                  <option value="Ropa de niño">Ropa de niño</option>
                   <option value="Limpieza">Limpieza</option>
                   <option value="Ofertas">Ofertas</option>
                 </select>
@@ -843,13 +849,23 @@ export default function Home() {
                   <img src={previewFoto} alt="Preview" className="mt-2 w-full max-h-[180px] object-cover rounded-lg border" />
                 )}
               </div>
-              <div className="mb-4">
+              <div className="mb-3">
                 <label className="block font-semibold mb-1 text-xs">O usar URL de imagen</label>
                 <input
                   type="url"
                   placeholder="https://..."
                   value={pImagen}
                   onChange={(e) => setPImagen(e.target.value)}
+                  className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block font-semibold mb-1 text-xs">Comentario (opcional)</label>
+                <textarea
+                  placeholder="Ej: Talla única, incluye envío..."
+                  value={pComentario}
+                  onChange={(e) => setPComentario(e.target.value)}
+                  rows={2}
                   className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
                 />
               </div>
