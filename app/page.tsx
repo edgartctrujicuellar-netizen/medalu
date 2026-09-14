@@ -11,6 +11,7 @@ interface Producto {
   categoria: string;
   imagen: string;
   agotado: boolean;
+  comentarios?: string;
 }
 
 interface ItemCarrito extends Producto {
