@@ -825,7 +825,7 @@ export default function Home() {
                   <option value="Bazar">Bazar</option>
                   <option value="Ropa de Dama">Ropa de Dama</option>
                   <option value="Alimentos">Alimentos</option>
-                  <option value="Lácteos y Bebidas">Lácteos y Bebidas</option>
+                  <option value="Lácteos y Bebidas">Ropa de niño</option>
                   <option value="Limpieza">Limpieza</option>
                   <option value="Ofertas">Ofertas</option>
                 </select>
