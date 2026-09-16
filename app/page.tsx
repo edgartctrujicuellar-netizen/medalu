@@ -2,6 +2,7 @@
 
 import { useState, useEffect, ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { supabase } from "@/lib/supabase";
+import CarruselImagenes from "@/components/ui/CarruselImagenes";
 
 // Tipos de datos
 interface Producto {
@@ -10,6 +11,7 @@ interface Producto {
   precio: number;
   categoria: string;
   imagen: string;
+  imagenes?: string[];
   agotado: boolean;
   comentarios?: string | null;
 }
@@ -61,10 +63,13 @@ export default function Home() {
   const [pNombre, setPNombre] = useState("");
   const [pPrecio, setPPrecio] = useState("");
   const [pCategoria, setPCategoria] = useState("Ropa de Dama");
-  const [pImagen, setPImagen] = useState("");
+  const [pImagen, setPImagen] = useState(""); // URL manual que se agrega al array
   const [pComentario, setPComentario] = useState("");
-  const [previewFoto, setPreviewFoto] = useState("");
+  // Todas las fotos del producto que se está creando/editando (varias, para colores/modelos)
+  const [previewFotos, setPreviewFotos] = useState<string[]>([]);
   const [guardando, setGuardando] = useState(false);
+  // Si tiene un valor, el formulario está EDITANDO ese producto en vez de crear uno nuevo
+  const [editandoId, setEditandoId] = useState<string | null>(null);
 
   // Cargar carrito (local) y productos (Supabase) al iniciar
   useEffect(() => {
@@ -81,7 +86,7 @@ export default function Home() {
     setCargandoProductos(true);
     const { data, error } = await supabase
       .from("productos")
-      .select("id, nombre, precio, categoria, imagen, agotado, comentarios")
+      .select("id, nombre, precio, categoria, imagen, imagenes, agotado, comentarios")
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -96,6 +101,13 @@ export default function Home() {
   const uy = (n: number) => "$UY " + Math.round(Number(n));
 
   const todosLosProductos = () => productos;
+
+  // Devuelve todas las fotos de un producto (o su imagen única, o el placeholder si no tiene nada)
+  const fotosDe = (p: Producto): string[] => {
+    if (p.imagenes && p.imagenes.length > 0) return p.imagenes;
+    if (p.imagen && p.imagen.trim() !== "") return [p.imagen];
+    return [IMG_FALLBACK];
+  };
 
   const estaAgotado = (id: string) => {
     const p = productos.find(prod => prod.id === id);
@@ -225,72 +237,133 @@ export default function Home() {
     }
   };
 
-  // Foto preview en Admin: se redimensiona y comprime antes de guardar,
-  // porque una foto tomada con la cámara del celular puede pesar varios MB
-  // y eso rompe el guardado. Con esto siempre queda liviana.
-  const previsualizarFoto = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new window.Image();
-      img.onload = () => {
-        const MAX_DIM = 1000;
-        let { width, height } = img;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) {
-            height = Math.round((height * MAX_DIM) / width);
-            width = MAX_DIM;
-          } else {
-            width = Math.round((width * MAX_DIM) / height);
-            height = MAX_DIM;
+  // Comprime un archivo de imagen y devuelve el resultado en base64 mediante una Promise,
+  // para poder procesar varias fotos una por una con async/await.
+  const comprimirArchivo = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new window.Image();
+        img.onload = () => {
+          const MAX_DIM = 1000;
+          let { width, height } = img;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
           }
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const comprimida = canvas.toDataURL("image/jpeg", 0.75);
-          setPreviewFoto(comprimida);
-        }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/jpeg", 0.75));
+          } else {
+            reject(new Error("No se pudo procesar la imagen."));
+          }
+        };
+        img.onerror = () => reject(new Error("No se pudo leer la imagen."));
+        img.src = ev.target?.result as string;
       };
-      img.src = ev.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+      reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Foto(s) preview en Admin: cada foto se redimensiona y comprime antes de guardar,
+  // porque una foto tomada con la cámara del celular puede pesar varios MB
+  // y eso rompe el guardado. Con esto siempre quedan livianas.
+  // Acepta varios archivos a la vez (para colores/modelos distintos del mismo producto).
+  const previsualizarFotos = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      const comprimidas = await Promise.all(
+        Array.from(files).map(file => comprimirArchivo(file))
+      );
+      setPreviewFotos(prev => [...prev, ...comprimidas]);
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo procesar alguna de las imágenes.");
+    } finally {
+      // Permite volver a elegir el mismo archivo más adelante si hace falta
+      e.target.value = "";
+    }
+  };
+
+  // Agrega la URL escrita en "O usar URL de imagen" como una foto más del producto
+  const agregarUrlComoFoto = () => {
+    const url = pImagen.trim();
+    if (!url) return;
+    setPreviewFotos(prev => [...prev, url]);
+    setPImagen("");
+  };
+
+  // Quita una foto específica de la lista de previsualización (antes de guardar)
+  const quitarFoto = (index: number) => {
+    setPreviewFotos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Carga los datos de un producto existente en el formulario para editarlo
+  const iniciarEdicion = (prod: Producto) => {
+    setEditandoId(prod.id);
+    setPNombre(prod.nombre);
+    setPPrecio(String(prod.precio));
+    setPCategoria(prod.categoria);
+    setPComentario(prod.comentarios || "");
+    setPreviewFotos(fotosDe(prod).filter(f => f !== IMG_FALLBACK));
+    setPImagen("");
+  };
+
+  // Cancela la edición en curso y deja el formulario limpio para crear un producto nuevo
+  const cancelarEdicion = () => {
+    setEditandoId(null);
+    setPNombre("");
+    setPPrecio("");
+    setPCategoria("Ropa de Dama");
+    setPImagen("");
+    setPComentario("");
+    setPreviewFotos([]);
   };
 
   const guardarProducto = async (e: FormEvent) => {
     e.preventDefault();
     setGuardando(true);
-    const imgFinal = previewFoto || pImagen || IMG_FALLBACK;
+
+    const imagenesFinal = previewFotos.length > 0 ? previewFotos : [IMG_FALLBACK];
+    const imagenFinal = imagenesFinal[0];
 
     try {
       const res = await fetch("/api/admin/products", {
-        method: "POST",
+        method: editandoId ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
           "x-admin-password": adminPass,
         },
         body: JSON.stringify({
+          ...(editandoId ? { id: editandoId } : {}),
           nombre: pNombre.trim(),
           precio: Number(pPrecio),
           categoria: pCategoria,
-          imagen: imgFinal,
+          imagen: imagenFinal,
+          imagenes: imagenesFinal,
           comentarios: pComentario.trim() || null,
         }),
       });
       const data = await res.json();
       if (res.ok && data.producto) {
-        setProductos(prev => [...prev, data.producto as Producto]);
-        setPNombre("");
-        setPPrecio("");
-        setPCategoria("Ropa de Dama");
-        setPImagen("");
-        setPComentario("");
-        setPreviewFoto("");
+        if (editandoId) {
+          setProductos(prev => prev.map(p => p.id === editandoId ? (data.producto as Producto) : p));
+        } else {
+          setProductos(prev => [...prev, data.producto as Producto]);
+        }
+        cancelarEdicion();
       } else {
         alert(data.error || "No se pudo guardar el producto.");
       }
@@ -512,16 +585,15 @@ export default function Home() {
           <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-5">
             {productosFiltrados.map(p => {
               const agotado = estaAgotado(p.id);
-              const imagen = p.imagen && p.imagen.trim() !== "" ? p.imagen : IMG_FALLBACK;
 
               return (
                 <article key={p.id} className={`card ${agotado ? "sin-stock" : ""}`}>
                   {agotado && <span className="badge-agotado">Agotado</span>}
                   <div className="thumb">
-                    <img
-                      src={imagen}
+                    <CarruselImagenes
+                      imagenes={fotosDe(p)}
                       alt={p.nombre}
-                      onError={(e) => { (e.target as HTMLImageElement).src = IMG_FALLBACK; }}
+                      className="w-full h-full"
                     />
                   </div>
                   <div className="p-4 flex flex-col gap-1.5 flex-1">
@@ -607,7 +679,7 @@ export default function Home() {
             carrito.map(i => (
               <div key={i.id} className="flex gap-3 items-center py-3 border-b border-[#E7E0D6]">
                 <img
-                  src={i.imagen || IMG_FALLBACK}
+                  src={fotosDe(i)[0]}
                   alt={i.nombre}
                   className="w-[62px] h-[62px] rounded-lg object-cover bg-[#E7E0D6]"
                   onError={(e) => { (e.target as HTMLImageElement).src = IMG_FALLBACK; }}
@@ -819,7 +891,9 @@ export default function Home() {
           </div>
           <div className="p-5">
             <p className="bg-[#E7E0D6] p-3 rounded-lg text-xs mb-4">
-              Agrega productos, marca los que están <strong>agotados</strong> o elimínalos.
+              {editandoId
+                ? "Editando un producto existente. Cambia lo que necesites y guarda."
+                : <>Agrega productos, marca los que están <strong>agotados</strong> o elimínalos.</>}
             </p>
 
             <form onSubmit={guardarProducto}>
@@ -863,27 +937,64 @@ export default function Home() {
                 </select>
               </div>
               <div className="mb-3">
-                <label className="block font-semibold mb-1 text-xs">Subir foto desde dispositivo</label>
+                <label className="block font-semibold mb-1 text-xs">
+                  Subir fotos desde el dispositivo (puedes elegir varias: distintos colores o modelos)
+                </label>
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={previsualizarFoto}
+                  multiple
+                  onChange={previsualizarFotos}
                   className="w-full p-2 border border-[#E7E0D6] rounded-lg bg-white text-xs"
                 />
-                {previewFoto && (
-                  <img src={previewFoto} alt="Preview" className="mt-2 w-full max-h-[180px] object-cover rounded-lg border" />
-                )}
               </div>
               <div className="mb-3">
-                <label className="block font-semibold mb-1 text-xs">O usar URL de imagen</label>
-                <input
-                  type="url"
-                  placeholder="https://..."
-                  value={pImagen}
-                  onChange={(e) => setPImagen(e.target.value)}
-                  className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
-                />
+                <label className="block font-semibold mb-1 text-xs">O agregar una foto por URL</label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    value={pImagen}
+                    onChange={(e) => setPImagen(e.target.value)}
+                    className="flex-1 p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={agregarUrlComoFoto}
+                    className="btn btn-cafe px-3 text-sm"
+                  >
+                    Agregar
+                  </button>
+                </div>
               </div>
+
+              {previewFotos.length > 0 && (
+                <div className="mb-4">
+                  <label className="block font-semibold mb-1.5 text-xs">
+                    Fotos de este producto ({previewFotos.length})
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {previewFotos.map((src, i) => (
+                      <div key={i} className="relative">
+                        <img
+                          src={src}
+                          alt={`Foto ${i + 1}`}
+                          className="w-full h-20 object-cover rounded-lg border border-[#E7E0D6]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => quitarFoto(i)}
+                          title="Quitar esta foto"
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white text-xs font-bold flex items-center justify-center"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="mb-4">
                 <label className="block font-semibold mb-1 text-xs">Comentario (opcional)</label>
                 <textarea
@@ -894,9 +1005,21 @@ export default function Home() {
                   className="w-full p-2.5 border border-[#E7E0D6] rounded-lg bg-white text-sm"
                 />
               </div>
-              <button type="submit" className="btn btn-cafe w-full py-3" disabled={guardando}>
-                {guardando ? "Guardando..." : "Guardar Producto"}
-              </button>
+              <div className="flex gap-2">
+                <button type="submit" className="btn btn-cafe w-full py-3" disabled={guardando}>
+                  {guardando ? "Guardando..." : editandoId ? "Guardar cambios" : "Guardar Producto"}
+                </button>
+                {editandoId && (
+                  <button
+                    type="button"
+                    onClick={cancelarEdicion}
+                    className="btn btn-agotado py-3 px-4"
+                    disabled={guardando}
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
             </form>
 
             <hr className="my-5 border-t border-[#E7E0D6]" />
@@ -908,7 +1031,7 @@ export default function Home() {
                 return (
                   <div key={prod.id} className="flex gap-3 items-center py-2 border-b border-[#E7E0D6]">
                     <img
-                      src={prod.imagen || IMG_FALLBACK}
+                      src={fotosDe(prod)[0]}
                       alt={prod.nombre}
                       className="w-12 h-12 rounded-lg object-cover bg-[#E7E0D6]"
                       onError={(e) => { (e.target as HTMLImageElement).src = IMG_FALLBACK; }}
@@ -925,6 +1048,13 @@ export default function Home() {
                       />
                       Agotado
                     </label>
+                    <button
+                      className="text-[#2C2623] font-bold p-1 hover:bg-[#E7E0D6] rounded text-xs underline"
+                      onClick={() => iniciarEdicion(prod)}
+                      title="Editar"
+                    >
+                      Editar
+                    </button>
                     <button
                       className="text-red-700 font-bold p-1 hover:bg-red-50 rounded"
                       onClick={() => eliminarProductoAdmin(prod.id)}
