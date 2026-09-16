@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     shortcut: '/logo-medalu.svg',
     apple: '/logo-medalu.svg',
   },
-} /
+}
 
 export const viewport: Viewport = {
   colorScheme: 'light dark',
