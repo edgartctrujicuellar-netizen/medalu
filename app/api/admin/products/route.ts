@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
-  const { nombre, precio, categoria, imagen, comentarios } = await req.json();
+  const { nombre, precio, categoria, imagen, imagenes, comentarios } = await req.json();
 
   if (!nombre || !precio) {
     return NextResponse.json(
@@ -30,6 +30,9 @@ export async function POST(req: NextRequest) {
       precio: parseFloat(precio),
       categoria,
       imagen,
+      // "imagenes" es un array con todas las fotos del producto (colores/modelos).
+      // Si no se envía, guardamos la imagen única dentro de un array por compatibilidad.
+      imagenes: Array.isArray(imagenes) && imagenes.length > 0 ? imagenes : imagen ? [imagen] : [],
       comentarios: comentarios && comentarios.trim() !== "" ? comentarios.trim() : null,
     })
     .select()
@@ -48,7 +51,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
-  const { id, nombre, precio, categoria, imagen, comentarios } = await req.json();
+  const { id, nombre, precio, categoria, imagen, imagenes, comentarios } = await req.json();
 
   if (!id) {
     return NextResponse.json(
@@ -65,13 +68,14 @@ export async function PUT(req: NextRequest) {
   }
 
   // Solo actualizamos los campos que vengan definidos, para poder editar
-  // solo el precio, o solo el nombre, o solo la imagen, sin pisar el resto.
+  // solo el precio, o solo el nombre, o solo las imágenes, sin pisar el resto.
   const cambios: Record<string, unknown> = {
     nombre,
     precio: parseFloat(precio),
   };
   if (categoria !== undefined) cambios.categoria = categoria;
   if (imagen !== undefined) cambios.imagen = imagen;
+  if (imagenes !== undefined) cambios.imagenes = imagenes;
   if (comentarios !== undefined) {
     cambios.comentarios = comentarios && comentarios.trim() !== "" ? comentarios.trim() : null;
   }
