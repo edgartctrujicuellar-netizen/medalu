@@ -9,21 +9,18 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
         url: '/logo-medalu.svg',
         type: 'image/svg+xml',
       },
+      {
+        url: '/icon-light-32x32.png',
+        sizes: '32x32',
+        type: 'image/png',
+      },
     ],
-    apple: '/apple-icon.png',
+    shortcut: '/logo-medalu.svg',
+    apple: '/logo-medalu.svg',
   },
-}
 
 export const viewport: Viewport = {
   colorScheme: 'light dark',
