@@ -41,6 +41,54 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ producto: data });
 }
 
+// Editar un producto existente (nombre, precio, categoría, imagen, comentarios)
+export async function PUT(req: NextRequest) {
+  const pass = tomarPassword(req);
+  if (!(await passwordValida(pass))) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+
+  const { id, nombre, precio, categoria, imagen, comentarios } = await req.json();
+
+  if (!id) {
+    return NextResponse.json(
+      { error: "Falta el id del producto a editar." },
+      { status: 400 }
+    );
+  }
+
+  if (!nombre || !precio) {
+    return NextResponse.json(
+      { error: "El nombre y el precio son obligatorios." },
+      { status: 400 }
+    );
+  }
+
+  // Solo actualizamos los campos que vengan definidos, para poder editar
+  // solo el precio, o solo el nombre, o solo la imagen, sin pisar el resto.
+  const cambios: Record<string, unknown> = {
+    nombre,
+    precio: parseFloat(precio),
+  };
+  if (categoria !== undefined) cambios.categoria = categoria;
+  if (imagen !== undefined) cambios.imagen = imagen;
+  if (comentarios !== undefined) {
+    cambios.comentarios = comentarios && comentarios.trim() !== "" ? comentarios.trim() : null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("productos")
+    .update(cambios)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ producto: data });
+}
+
 // Marcar/desmarcar agotado
 export async function PATCH(req: NextRequest) {
   const pass = tomarPassword(req);
